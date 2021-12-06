@@ -3,6 +3,19 @@
         <v-row>
             <v-col cols="12" md="6">
                 <v-card outlined elevation="2">
+                    <v-toolbar dense elevation="1" color="primary">
+                        <v-toolbar-title>Systems</v-toolbar-title>
+                        <v-spacer />
+                        <v-btn
+                            text
+                            outlined
+                            rounded
+                            elevation="1"
+                            @click="clear"
+                        >
+                            Clear
+                        </v-btn>
+                    </v-toolbar>
                     <v-card-text>
                         <v-text-field
                             v-if="!!startSystem"
@@ -20,11 +33,12 @@
                             outlined
                             clearable
                             :error-messages="startInputErrors"
+                            @keypress.enter="setStart"
                         >
                             <v-icon
                                 slot="append"
                                 color="green"
-                                @click="setstart"
+                                @click="setStart"
                             >
                                 mdi-check
                             </v-icon>
@@ -34,6 +48,7 @@
                             :key="system.name"
                             readonly
                             append-icon="mdi-close"
+                            @click:append="removeSystem(system.name)"
                         >
                             {{ system.name }}
                         </v-input>
@@ -42,6 +57,7 @@
                             v-model="systemInput"
                             clearable
                             :error-messages="systemInputErrors"
+                            @keypress.enter="addSystem"
                         >
                             <v-icon
                                 slot="append"
@@ -56,29 +72,41 @@
             </v-col>
             <v-col cols="12" md="6">
                 <v-card outlined elevation="2">
-                    <v-toolbar dense elevation="1">
+                    <v-toolbar dense elevation="1" color="primary">
                         <v-toolbar-title>Result</v-toolbar-title>
-                        <v-spacer></v-spacer>
-                        <v-btn text @click="clear">Clear</v-btn>
-                        <v-btn text @click="reveal">Reveal</v-btn>
+                        <v-spacer />
+                        <v-btn
+                            text
+                            outlined
+                            rounded
+                            elevation="1"
+                            @click="reveal"
+                        >
+                            Reveal
+                        </v-btn>
                     </v-toolbar>
-                    <v-list-item
-                        three-line
-                        v-for="system of route"
-                        :key="system.name"
-                    >
-                        <v-list-item-content>
-                            <v-list-item-title>
-                                {{ system.name }}
-                            </v-list-item-title>
-                            <v-list-item-subtitle>
-                                Distance: {{ +system.distance.toFixed(2) }}
-                            </v-list-item-subtitle>
-                            <v-list-item-subtitle>
-                                From start: {{ +system.fromStart.toFixed(2) }}
-                            </v-list-item-subtitle>
-                        </v-list-item-content>
-                    </v-list-item>
+                    <v-timeline v-if="route.length > 0" dense align-top>
+                        <v-timeline-item
+                            v-for="system of route"
+                            :key="system.name"
+                            :color="starColor(system.starType)"
+                        >
+                            <v-row align="center">
+                                <v-col>
+                                    <strong>{{ system.name }}</strong>
+                                </v-col>
+                                <v-col>
+                                    <strong>
+                                        {{ +system.distance.toFixed(2) }} ly
+                                    </strong>
+                                    <div class="text-caption">
+                                        From start:
+                                        {{ +system.fromStart.toFixed(2) }} ly
+                                    </div>
+                                </v-col>
+                            </v-row>
+                        </v-timeline-item>
+                    </v-timeline>
                 </v-card>
             </v-col>
         </v-row>
@@ -97,12 +125,14 @@ interface Location {
 interface System {
     name: string;
     location: Location;
+    starType?: string;
 }
 
 interface Revealed {
     name: string;
     distance: number;
     fromStart: number;
+    starType?: string;
 }
 
 @Component
@@ -116,7 +146,7 @@ export default class Route extends Vue {
     systemInputErrors: string[] = [];
     route: Revealed[] = [];
 
-    setstart(): void {
+    setStart(): void {
         const system = this.startInput?.trim();
         if (!system) return;
         this.startInput = '';
@@ -128,9 +158,12 @@ export default class Route extends Vue {
         }
 
         this.$http
-            .get(
-                `https://www.edsm.net/api-v1/system?systemName=${system}&showCoordinates=1`
-            )
+            .get('system', {
+                params: {
+                    systemName: system,
+                    showCoordinates: 1,
+                },
+            })
             .then((response) => {
                 if (!response.data.name) {
                     this.startInputErrors.push('Not found in EDSM database');
@@ -158,9 +191,13 @@ export default class Route extends Vue {
         }
 
         this.$http
-            .get(
-                `https://www.edsm.net/api-v1/system?systemName=${system}&showCoordinates=1`
-            )
+            .get('system', {
+                params: {
+                    systemName: system,
+                    showCoordinates: 1,
+                    showPrimaryStar: 1,
+                },
+            })
             .then((response) => {
                 if (!response.data.name) {
                     this.systemInputErrors.push('Not found in EDSM database');
@@ -169,11 +206,18 @@ export default class Route extends Vue {
                 this.intermediate.push({
                     name: response.data.name,
                     location: response.data.coords,
+                    starType: response.data.primaryStar?.type,
                 });
             })
             .catch((err) => {
                 this.systemInputErrors.push(err.toString());
             });
+    }
+
+    removeSystem(name: string): void {
+        const ix = this.intermediate.findIndex((s) => s.name === name);
+        if (ix === -1) return;
+        this.intermediate.splice(ix, 1);
     }
 
     clear(): void {
@@ -211,6 +255,7 @@ export default class Route extends Vue {
                 name: s.name,
                 location: s.location,
                 fromStart: distance3d(start.location, s.location),
+                starType: s.starType,
             };
         });
 
@@ -232,6 +277,7 @@ export default class Route extends Vue {
                 name: next.name,
                 distance: nextDistance,
                 fromStart: next.fromStart,
+                starType: next.starType,
             });
 
             // Remove start and check if any other left
@@ -259,6 +305,26 @@ export default class Route extends Vue {
         }
 
         this.route = route;
+    }
+
+    starColor(type?: string): string {
+        if (!type) return 'primary';
+        if (type.startsWith('O ')) return '#f4f5ff';
+        if (type.startsWith('B ')) return '#b6c7e3';
+        if (type.startsWith('A ')) return '#cef';
+        if (type.startsWith('F ')) return '#afc0db';
+        if (type.startsWith('G ')) return 'yellow';
+        if (type.startsWith('K ')) return 'orange';
+        if (type.startsWith('M ')) return 'red';
+        if (type.startsWith('L ')) return 'purple';
+        if (type.startsWith('T Tauri ')) return 'yellow';
+        if (type.startsWith('T ')) return 'purple';
+        if (type.startsWith('Y ')) return 'purple';
+        if (type.includes('Black')) return 'black';
+        if (type.includes('White Dwarf')) return '#486ba3';
+        if (type.includes('Neutron')) return '#1958bf';
+        if (type.includes('Wolf-Rayet')) return 'white';
+        return 'secondary';
     }
 
 }

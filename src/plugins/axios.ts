@@ -10,6 +10,7 @@ import axios from 'axios';
 
 const config = {
     // baseURL: process.env.baseURL || process.env.apiUrl || ""
+    baseURL: 'https://www.edsm.net/api-v1/',
     // timeout: 60 * 1000, // Timeout
     // withCredentials: true, // Check cross-site Access-Control
 };
